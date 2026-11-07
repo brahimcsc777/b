@@ -21,11 +21,55 @@ jobs:
             echo "PROJECT_DIR=$PWD/$(dirname $pj)" >> $GITHUB_ENV
           fi
 
+      - name: Patch Android config for modern build
+        run: |
+          python3 - <<'PYEOF'
+          import os
+          d = os.environ["PROJECT_DIR"]
+          def edit(rel, pairs):
+              p = os.path.join(d, rel)
+              s = open(p).read()
+              for a, b in pairs:
+                  s = s.replace(a, b)
+              open(p, "w").write(s)
+          if "google()" not in open(os.path.join(d, "android/build.gradle")).read():
+            edit("android/build.gradle", [
+              ("        jcenter()\n    }\n    dependencies {", "        google()\n        mavenCentral()\n        jcenter()\n    }\n    dependencies {"),
+              ("gradle:2.2.3", "gradle:3.1.4"),
+              ("        mavenLocal()\n        jcenter()", "        mavenLocal()\n        google()\n        mavenCentral()\n        jcenter()"),
+            ])
+          edit("android/gradle/wrapper/gradle-wrapper.properties", [("gradle-2.14.1-all.zip", "gradle-4.4-all.zip")])
+          edit("android/app/build.gradle", [
+            ("compileSdkVersion 23", "compileSdkVersion 27"),
+            ('buildToolsVersion "23.0.1"', 'buildToolsVersion "27.0.3"'),
+            ("targetSdkVersion 22", "targetSdkVersion 27"),
+            ("appcompat-v7:23.0.1", "appcompat-v7:27.1.1"),
+          ])
+          s = open(os.path.join(d, "android/app/build.gradle")).read()
+          if "signingConfigs.release" not in s:
+              s = s.replace("    buildTypes {\n        release {",
+          '''    signingConfigs {
+                  release {
+                      storeFile file("debug.keystore")
+                      storePassword "android"
+                      keyAlias "androiddebugkey"
+                      keyPassword "android"
+                  }
+              }
+              lintOptions {
+                  checkReleaseBuilds false
+                  abortOnError false
+              }
+              buildTypes {
+                  release {
+                      signingConfig signingConfigs.release''')
+              open(os.path.join(d, "android/app/build.gradle"), "w").write(s)
+          PYEOF
+
       - name: Install Android SDK packages
         run: |
           export JAVA_HOME=$JAVA_HOME_17_X64
           SDKM=$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager
-          ls $ANDROID_HOME/cmdline-tools
           yes | $SDKM --licenses > /dev/null || true
           $SDKM "platforms;android-27" "build-tools;27.0.3" "platform-tools"
 
