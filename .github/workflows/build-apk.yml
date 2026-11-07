@@ -1,0 +1,63 @@
+name: Build Android APK
+on:
+  push:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Locate project (zip or plain)
+        run: |
+          if [ -f android/build.gradle ]; then
+            echo "PROJECT_DIR=$PWD" >> $GITHUB_ENV
+          else
+            zip=$(ls *.zip | head -1)
+            mkdir -p _proj && unzip -q "$zip" -d _proj
+            pj=$(find _proj -maxdepth 3 -name package.json | head -1)
+            echo "PROJECT_DIR=$PWD/$(dirname $pj)" >> $GITHUB_ENV
+          fi
+
+      - name: Install Android SDK packages
+        run: |
+          yes | sdkmanager --licenses > /dev/null || true
+          sdkmanager "platforms;android-27" "build-tools;27.0.3" "platform-tools"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 8
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 12
+
+      - name: Install JS dependencies
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: npm install --no-audit --no-fund
+
+      - name: Create signing key
+        working-directory: ${{ env.PROJECT_DIR }}/android/app
+        run: |
+          keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey \
+            -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+
+      - name: Build release APK
+        working-directory: ${{ env.PROJECT_DIR }}/android
+        run: chmod +x gradlew && ./gradlew assembleRelease --no-daemon
+
+      - name: Rename APK
+        run: cp "$PROJECT_DIR/android/app/build/outputs/apk/release/app-release.apk" MyBinance.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MyBinance-apk
+          path: MyBinance.apk
+
+      - name: Publish release (direct download link)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "build-${{ github.run_number }}" MyBinance.apk --title "MyBinance build ${{ github.run_number }}" --notes "Android APK"
