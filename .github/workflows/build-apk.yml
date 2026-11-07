@@ -23,8 +23,11 @@ jobs:
 
       - name: Install Android SDK packages
         run: |
-          yes | sdkmanager --licenses > /dev/null || true
-          sdkmanager "platforms;android-27" "build-tools;27.0.3" "platform-tools"
+          export JAVA_HOME=$JAVA_HOME_17_X64
+          SDKM=$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager
+          ls $ANDROID_HOME/cmdline-tools
+          yes | $SDKM --licenses > /dev/null || true
+          $SDKM "platforms;android-27" "build-tools;27.0.3" "platform-tools"
 
       - uses: actions/setup-java@v4
         with:
